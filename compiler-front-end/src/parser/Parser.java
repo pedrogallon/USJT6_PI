@@ -11,36 +11,36 @@ public class Parser {
 	private Token look;
 	Env top = null;
 	int used = 0;
-	
-	public Parser(Lexer l) throws IOException{
+
+	public Parser(Lexer l) throws IOException {
 		lex = l;
 		move();
 	}
-	
+
 	void move() throws IOException {
 		look = lex.scan();
 	}
-	
+
 	void error(String s) {
 		throw new Error("near line " + lex.line + ": " + s);
 	}
-	
-	void match(int t) throws IOException{
-		if(look.tag == t)
+
+	void match(int t) throws IOException {
+		if (look.tag == t)
 			move();
-		else 
+		else
 			error("syntax error");
 	}
-	
+
 	public void program() throws IOException {
 		Stmt s = block();
 		int begin = s.newlabel();
 		int after = s.newlabel();
 		s.emitlabel(begin);
-		s.gen(begin,  after);
+		s.gen(begin, after);
 		s.emitlabel(after);
 	}
-	
+
 	Stmt block() throws IOException {
 		match('{');
 		Env savedEnv = top;
@@ -51,175 +51,233 @@ public class Parser {
 		top = savedEnv;
 		return s;
 	}
-	
+
 	void decls() throws IOException {
-		while( look.tag == Tag.BASIC ) {
+		while (look.tag == Tag.BASIC) {
 			Type p = type();
 			Token tok = look;
 			match(Tag.ID);
+			Id id = new Id((Word) tok, p, used);
+			//alteracao
+			if (look.tag == '=') {
+				move();
+				new Set(id, bool());
+			}
 			match(';');
-			Id id = new Id((Word)tok, p, used);
 			top.put(tok, id);
 			used = used + p.width;
 		}
 	}
 	
+	//alteracao
+	Stmt decl_assign() throws IOException {
+		Stmt stmt;
+		Type p = type();
+		Token tok = look;
+		match(Tag.ID);
+		Id id = new Id((Word) tok, p, used);
+		match('=');
+		stmt = new DeclAssign(id, bool());
+		match(';');
+		top.put(tok, id);
+		used = used + p.width;
+		return stmt;
+	}
+
+	Stmt assign() throws IOException {
+		Stmt stmt;
+		Token t = look;
+		match(Tag.ID);
+		Id id = top.get(t);
+		if (id == null)
+			error(t.toString() + " undeclared");
+		if (look.tag == '=') {
+			move();
+			stmt = new Set(id, bool());
+		} else {
+			Access x = offset(id);
+			match('=');
+			stmt = new SetElem(x, bool());
+		}
+
+		match(';');
+		return stmt;
+	}
+
 	Type type() throws IOException {
-		Type p = (Type)look;
+		Type p = (Type) look;
 		match(Tag.BASIC);
-		if( look.tag != '[') {
+		if (look.tag != '[') {
 			return p;
-		}else {
+		} else {
 			return dims(p);
 		}
 	}
-	
+
 	Type dims(Type p) throws IOException {
 		match('[');
 		Token tok = look;
 		match(Tag.NUM);
 		match(']');
-		if(look.tag == '[') {
+		if (look.tag == '[') {
 			p = dims(p);
 		}
-		return new Array(((Num)tok).value, p);
+		return new Array(((Num) tok).value, p);
 	}
-	
+
 	Stmt stmts() throws IOException {
-		if( look.tag == '}') return Stmt.Null;
-		else return new Seq(stmt(), stmts());
+		if (look.tag == '}')
+			return Stmt.Null;
+		else
+			return new Seq(stmt(), stmts());
 	}
-	
+
 	Stmt stmt() throws IOException {
 		Expr x;
 		Stmt s, s1, s2;
 		Stmt savedStmt;
-		switch(look.tag) {
+		switch (look.tag) {
 		case ';':
 			move();
 			return Stmt.Null;
 		case Tag.IF:
-			match(Tag.IF); match('('); x = bool(); match(')');
+			match(Tag.IF);
+			match('(');
+			x = bool();
+			match(')');
 			s1 = stmt();
-			if( look.tag != Tag.ELSE ) return new If(x, s1);
+			if (look.tag != Tag.ELSE)
+				return new If(x, s1);
 			match(Tag.ELSE);
 			s2 = stmt();
 			return new Else(x, s1, s2);
 		case Tag.WHILE:
 			While whilenode = new While();
-			savedStmt = Stmt.enclosing; Stmt.enclosing = whilenode;
-			match(Tag.WHILE); match('('); x = bool(); match(')');
+			savedStmt = Stmt.enclosing;
+			Stmt.enclosing = whilenode;
+			match(Tag.WHILE);
+			match('(');
+			x = bool();
+			match(')');
 			s1 = stmt();
 			whilenode.init(x, s1);
 			Stmt.enclosing = savedStmt;
 			return whilenode;
 		case Tag.DO:
 			Do donode = new Do();
-			savedStmt = Stmt.enclosing; Stmt.enclosing = donode;
+			savedStmt = Stmt.enclosing;
+			Stmt.enclosing = donode;
 			match(Tag.DO);
 			s1 = stmt();
-			match(Tag.WHILE); match('('); x = bool(); match(')'); match(';');
+			match(Tag.WHILE);
+			match('(');
+			x = bool();
+			match(')');
+			match(';');
 			donode.init(s1, x);
 			Stmt.enclosing = savedStmt;
 			return donode;
 		case Tag.BREAK:
-			match(Tag.BREAK); match(';');
+			match(Tag.BREAK);
+			match(';');
 			return new Break();
 		case '{':
 			return block();
+		//alteracao
+		case Tag.BASIC:
+			return decl_assign();
 		default:
-			return assign();			
+			return assign();
 		}
 	}
-	
-	Stmt assign() throws IOException{
-		Stmt stmt;
-		Token t = look;
-		match(Tag.ID);
-		Id id = top.get(t);
-		if(id == null) error(t.toString() + " undeclared");
-		if( look.tag == '=') {
-			move();
-			stmt = new Set(id, bool());
-		}else {
-			Access x = offset(id);
-			match('=');
-			stmt = new SetElem(x, bool());
-		}
-		
-		match(';');
-		return stmt;
-	}
-	
+
 	Expr bool() throws IOException {
 		Expr x = join();
-		while( look.tag == Tag.OR ) {
+		while (look.tag == Tag.OR) {
 			Token tok = look;
 			move();
 			x = new Or(tok, x, join());
 		}
-		
+
 		return x;
 	}
-	
+
 	Expr join() throws IOException {
 		Expr x = equality();
-		while ( look.tag == Tag.AND) {
-			Token tok = look; move(); x = new And(tok, x, equality());
+		while (look.tag == Tag.AND) {
+			Token tok = look;
+			move();
+			x = new And(tok, x, equality());
 		}
 		return x;
 	}
-	
-	Expr equality() throws IOException{
+
+	Expr equality() throws IOException {
 		Expr x = rel();
-		while(look.tag == Tag.EQ || look.tag == Tag.NE) {
-			Token tok = look; move(); x= new Rel(tok, x, rel());
+		while (look.tag == Tag.EQ || look.tag == Tag.NE) {
+			Token tok = look;
+			move();
+			x = new Rel(tok, x, rel());
 		}
 		return x;
 	}
-	
+
 	Expr rel() throws IOException {
 		Expr x = expr();
-		switch( look .tag ) {
-		case '<': case Tag.LE: case Tag.GE: case '>':
-			Token tok = look; move(); return new Rel(tok, x, expr());
+		switch (look.tag) {
+		case '<':
+		case Tag.LE:
+		case Tag.GE:
+		case '>':
+			Token tok = look;
+			move();
+			return new Rel(tok, x, expr());
 		default:
 			return x;
 		}
 	}
-	
-	Expr expr() throws IOException{
+
+	Expr expr() throws IOException {
 		Expr x = term();
-		while( look.tag == '+' || look.tag == '-' ){
-			Token tok = look; move(); x = new Arith(tok, x, term());
+		while (look.tag == '+' || look.tag == '-') {
+			Token tok = look;
+			move();
+			x = new Arith(tok, x, term());
 		}
-		
+
 		return x;
 	}
-	
+
 	Expr term() throws IOException {
 		Expr x = unary();
 		while (look.tag == '*' || look.tag == '/') {
-			Token tok = look; move(); x= new Arith(tok, x, unary());
+			Token tok = look;
+			move();
+			x = new Arith(tok, x, unary());
 		}
 		return x;
 	}
-	
+
 	Expr unary() throws IOException {
-		if(look.tag == '-') {
-			move(); return new Unary(Word.minus, unary());
-		} else if(look.tag == '!') {
-			Token tok = look; move(); return new Not(tok, unary());
+		if (look.tag == '-') {
+			move();
+			return new Unary(Word.minus, unary());
+		} else if (look.tag == '!') {
+			Token tok = look;
+			move();
+			return new Not(tok, unary());
 		} else {
 			return factor();
 		}
 	}
-	
-	Expr factor() throws IOException{
+
+	Expr factor() throws IOException {
 		Expr x = null;
-		switch( look.tag ) {
+		switch (look.tag) {
 		case '(':
-			move(); x = bool(); match(')');
+			move();
+			x = bool();
+			match(')');
 			return x;
 		case Tag.NUM:
 			x = new Constant(look, Type.Int);
@@ -243,30 +301,40 @@ public class Parser {
 		case Tag.ID:
 			String s = look.toString();
 			Id id = top.get(look);
-			if (id == null) error(look.toString() + " undeclared");
+			if (id == null)
+				error(look.toString() + " undeclared");
 			move();
-			if (look.tag != '[') return id;
-			else return offset(id);
+			if (look.tag != '[')
+				return id;
+			else
+				return offset(id);
 		}
 	}
-	
+
 	Access offset(Id a) throws IOException {
-		Expr i; Expr w; Expr t1, t2; Expr loc;
+		Expr i;
+		Expr w;
+		Expr t1, t2;
+		Expr loc;
 		Type type = a.type;
-		match('['); i = bool(); match(']');
-		type = ((Array)type).of;
+		match('[');
+		i = bool();
+		match(']');
+		type = ((Array) type).of;
 		w = new Constant(type.width);
 		t1 = new Arith(new Token('*'), i, w);
 		loc = t1;
-		while( look.tag == '[') {
-			match('['); i = bool(); match(']');
-			type = ((Array)type).of;
+		while (look.tag == '[') {
+			match('[');
+			i = bool();
+			match(']');
+			type = ((Array) type).of;
 			w = new Constant(type.width);
 			t1 = new Arith(new Token('*'), i, w);
 			t2 = new Arith(new Token('+'), loc, t1);
 			loc = t2;
 		}
-		
+
 		return new Access(a, loc, type);
 	}
 }
