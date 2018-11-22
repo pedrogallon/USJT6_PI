@@ -21,6 +21,7 @@ public class Parser {
 		look = lex.scan();
 	}
 
+	@SuppressWarnings("static-access")
 	void error(String s) {
 		throw new Error("near line " + lex.line + ": " + s);
 	}
@@ -83,6 +84,25 @@ public class Parser {
 		used = used + p.width;
 		return stmt;
 	}
+	
+	//CASO ALTERE BLOCK 
+	Stmt decl() throws IOException {
+		Stmt stmt;
+		Type p = type();
+		Token tok = look;
+		match(Tag.ID);
+		Id id = new Id((Word) tok, p, used);
+		if (look.tag == '=') {
+			move();
+			stmt = new DeclAssign(id, bool());
+		}else {
+			stmt = new Decl(id);			
+		}
+		match(';');
+		top.put(tok, id);
+		used = used + p.width;
+		return stmt;
+	}
 
 	Stmt assign() throws IOException {
 		Stmt stmt;
@@ -134,7 +154,7 @@ public class Parser {
 
 	Stmt stmt() throws IOException {
 		Expr x;
-		Stmt s, s1, s2;
+		Stmt s1, s2;
 		Stmt savedStmt;
 		switch (look.tag) {
 		case ';':
@@ -163,6 +183,22 @@ public class Parser {
 			whilenode.init(x, s1);
 			Stmt.enclosing = savedStmt;
 			return whilenode;
+		//alteracao
+		case Tag.FOR:
+			For fornode = new For();
+			savedStmt = Stmt.enclosing;
+			Stmt.enclosing = fornode;
+			match(Tag.FOR);
+			match('(');
+			Stmt init = decl_assign();
+			x = bool();
+			match(';');
+			Stmt increment = assign();
+			match(')');
+			s1 = stmt();
+			fornode.init(init, x, increment, s1);
+			Stmt.enclosing = savedStmt;
+			return fornode;
 		case Tag.DO:
 			Do donode = new Do();
 			savedStmt = Stmt.enclosing;
@@ -299,7 +335,6 @@ public class Parser {
 			error("syntax error");
 			return x;
 		case Tag.ID:
-			String s = look.toString();
 			Id id = top.get(look);
 			if (id == null)
 				error(look.toString() + " undeclared");

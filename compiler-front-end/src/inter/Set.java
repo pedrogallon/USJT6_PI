@@ -1,5 +1,4 @@
 package inter;
-import lexer.*;
 import symbols.*;
 
 public class Set extends Stmt {
@@ -20,5 +19,10 @@ public class Set extends Stmt {
 	
 	public void gen(int b, int a) {
 		emit( id.toString() + " = " + expr.gen().toString());
+	}
+	
+	public String toString() {
+		return( id.toString() + " = " + expr.gen().toString()+";");
+		
 	}
 }

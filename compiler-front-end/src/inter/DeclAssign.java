@@ -21,4 +21,8 @@ public class DeclAssign extends Stmt {
 	public void gen(int b, int a) {
 		emit( id.type +" "+ id.toString() + " = " + expr.gen().toString());
 	}
+	
+	public String toString() {
+		return( id.type +" "+ id.toString() + " = " + expr.gen().toString()+";");
+	}
 }
